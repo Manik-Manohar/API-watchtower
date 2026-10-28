@@ -16,6 +16,9 @@ def get_connection():
         database=os.getenv("DB_NAME")
     )
 
+def create_table():
+    create_tables()
+
 def create_tables():
     conn = get_connection()
     cursor = conn.cursor()
@@ -55,3 +58,39 @@ def create_tables():
     cursor.close()
     conn.close()
     print("Database schema migration complete!")
+
+def get_service_history(service_id=None, limit=50):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    if service_id:
+        cursor.execute(
+            "SELECT * FROM checks WHERE service_id = %s ORDER BY checked_at DESC LIMIT %s",
+            (service_id, limit)
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM checks ORDER BY checked_at DESC LIMIT %s",
+            (limit,)
+        )
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return results
+
+def get_recent_response_trend(service_id=None, limit=20):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    if service_id:
+        cursor.execute(
+            "SELECT response_time, checked_at FROM checks WHERE service_id = %s ORDER BY checked_at DESC LIMIT %s",
+            (service_id, limit)
+        )
+    else:
+        cursor.execute(
+            "SELECT response_time, checked_at FROM checks ORDER BY checked_at DESC LIMIT %s",
+            (limit,)
+        )
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return results[::-1]  # Return in chronological order
