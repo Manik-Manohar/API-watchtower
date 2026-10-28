@@ -10,10 +10,10 @@ load_dotenv(dotenv_path=env_path)
 def get_connection():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST"),
-        port=int(os.getenv("DB_PORT", 3306)),
+        port=int(os.getenv("DB_PORT", 4000)),
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_NAME")
+        database=os.getenv("DB_NAME", "test")
     )
 
 def create_table():
@@ -30,8 +30,9 @@ def create_tables():
             service_id VARCHAR(50),
             service_name VARCHAR(100),
             status VARCHAR(20),
-            response_time INT,
-            checked_at DATETIME
+            status_code INT,
+            response_time_ms INT,
+            checked_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
@@ -46,13 +47,21 @@ def create_tables():
         )
     """)
     
-    # 3. Migration safety check: ensure 'service_id' exists in 'alerts' table
-    try:
-        cursor.execute("ALTER TABLE alerts ADD COLUMN service_id VARCHAR(50) AFTER id;")
-    except mysql.connector.Error as err:
-        # Ignore error 1060 (Duplicate column name) if it already exists
-        if err.errno != 1060:
-            print(f"Migration notice: {err}")
+    # 3. Migration safety checks for 'checks' table columns
+    migrations = [
+        "ALTER TABLE checks ADD COLUMN status_code INT AFTER status;",
+        "ALTER TABLE checks ADD COLUMN response_time_ms INT AFTER status_code;",
+        "ALTER TABLE checks ADD COLUMN service_id VARCHAR(50) AFTER id;",
+        "ALTER TABLE alerts ADD COLUMN service_id VARCHAR(50) AFTER id;"
+    ]
+
+    for query in migrations:
+        try:
+            cursor.execute(query)
+        except mysql.connector.Error as err:
+            # Error 1060: Duplicate column name (column already exists)
+            if err.errno != 1060:
+                print(f"Migration notice: {err}")
 
     conn.commit()
     cursor.close()
@@ -82,15 +91,15 @@ def get_recent_response_trend(service_id=None, limit=20):
     cursor = conn.cursor(dictionary=True)
     if service_id:
         cursor.execute(
-            "SELECT response_time, checked_at FROM checks WHERE service_id = %s ORDER BY checked_at DESC LIMIT %s",
+            "SELECT COALESCE(response_time_ms, response_time) AS response_time_ms, checked_at FROM checks WHERE service_id = %s ORDER BY checked_at DESC LIMIT %s",
             (service_id, limit)
         )
     else:
         cursor.execute(
-            "SELECT response_time, checked_at FROM checks ORDER BY checked_at DESC LIMIT %s",
+            "SELECT COALESCE(response_time_ms, response_time) AS response_time_ms, checked_at FROM checks ORDER BY checked_at DESC LIMIT %s",
             (limit,)
         )
     results = cursor.fetchall()
     cursor.close()
     conn.close()
-    return results[::-1]  # Return in chronological order
+    return results[::-1]  # Chronological order
