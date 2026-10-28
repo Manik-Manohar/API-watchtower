@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+const API = import.meta.env.VITE_API_URL || 'https://api-watchtower-0rh1.onrender.com'
+
 /* ============ LOGIN ============ */
 function LoginPage({ onLogin }) {
   const [username, setUsername] = useState('')
@@ -49,20 +50,24 @@ function ResponseChart() {
   useEffect(() => {
     fetch(`${API}/api/response-trend?limit=10`)
       .then(res => res.json())
-      .then(setPoints)
+      .then(data => {
+        if (Array.isArray(data)) setPoints(data)
+      })
+      .catch(() => setPoints([]))
   }, [])
 
-  if (points.length < 2) return <p className="chart-empty">Not enough data yet.</p>
+  if (points.length < 2) return <p className="chart-empty">Not enough trend data yet.</p>
 
   const width = 600
   const height = 220
-  const values = points.map(p => p.avg_response_time_ms)
+  const values = points.map(p => p.avg_response_time_ms || p.response_time || 0)
   const max = Math.max(...values, 50)
   const stepX = width / (points.length - 1)
 
   const linePath = points.map((p, i) => {
+    const val = p.avg_response_time_ms || p.response_time || 0
     const x = i * stepX
-    const y = height - (p.avg_response_time_ms / max) * height
+    const y = height - (val / max) * height
     return `${i === 0 ? 'M' : 'L'} ${x} ${y}`
   }).join(' ')
 
@@ -72,15 +77,16 @@ function ResponseChart() {
     <svg viewBox={`0 0 ${width} ${height}`} className="response-chart">
       <path d={areaPath} fill="rgba(255,255,255,0.05)" />
       <path d={linePath} fill="none" stroke="#fafafa" strokeWidth="2.5" />
-      {points.map((p, i) => (
-        <circle key={i} cx={i * stepX} cy={height - (p.avg_response_time_ms / max) * height} r="3.5" fill="#fafafa" />
-      ))}
+      {points.map((p, i) => {
+        const val = p.avg_response_time_ms || p.response_time || 0
+        return <circle key={i} cx={i * stepX} cy={height - (val / max) * height} r="3.5" fill="#fafafa" />
+      })}
     </svg>
   )
 }
 
 /* ============ PAGE 1: DASHBOARD ============ */
-function DashboardPage({ services, upCount, downCount, avgResponse, lastUpdated, }) {
+function DashboardPage({ services, upCount, downCount, avgResponse, lastUpdated }) {
   return (
     <>
       <div className="dashboard-title">
@@ -191,7 +197,6 @@ function ResponseTimePage({ services }) {
   )
 }
 
-
 /* ============ PAGE 3: ALERTS (ERRORS) ============ */
 function AlertsPage({ alerts }) {
   return (
@@ -205,14 +210,14 @@ function AlertsPage({ alerts }) {
 
       <div className="activity-card">
         <div className="activity-list">
-          {alerts.length === 0 && <p className="no-data">No alerts yet.</p>}
-          {alerts.slice(0, 50).map(a => (
+          {(!alerts || alerts.length === 0) && <p className="no-data">No alerts yet.</p>}
+          {alerts && alerts.slice(0, 50).map(a => (
             <div className="activity-item" key={a.id}>
               <span className="activity-dot red-dot"></span>
               <div>
                 <strong>{a.service_name} unavailable</strong>
                 <p>{a.message}</p>
-                <small>{new Date(a.triggered_at).toLocaleString()}</small>
+                <small>{new Date(a.created_at || a.triggered_at || Date.now()).toLocaleString()}</small>
               </div>
             </div>
           ))}
@@ -261,13 +266,18 @@ function Dashboard({ onLogout }) {
     fetch(`${API}/api/services`)
       .then(res => res.json())
       .then(data => {
-        setServices(data)
+        if (Array.isArray(data)) setServices(data)
         setLoading(false)
         setLastUpdated(new Date())
       })
+      .catch(() => setLoading(false))
+
     fetch(`${API}/api/alerts`)
       .then(res => res.json())
-      .then(setAlerts)
+      .then(data => {
+        if (Array.isArray(data)) setAlerts(data)
+      })
+      .catch(() => setAlerts([]))
   }
 
   useEffect(() => {
@@ -281,7 +291,7 @@ function Dashboard({ onLogout }) {
   const upCount = services.filter(s => s.status === 'up').length
   const downCount = services.filter(s => s.status === 'down').length
   const avgResponse = services.length
-    ? Math.round(services.reduce((sum, s) => sum + s.response_time_ms, 0) / services.length)
+    ? Math.round(services.reduce((sum, s) => sum + (s.response_time_ms || 0), 0) / services.length)
     : 0
 
   const handleLogout = () => {
