@@ -20,11 +20,18 @@ def health():
 
 @app.route("/api/services")
 def services():
-    return jsonify(check_all_services())
+    try:
+        return jsonify(check_all_services())
+    except Exception as e:
+        print(f"Error fetching services: {e}")
+        return jsonify([])
 
 def scheduled_check():
     print("Running scheduled check...")
-    check_all_services()
+    try:
+        check_all_services()
+    except Exception as e:
+        print(f"Error during scheduled check: {e}")
 
 # Initialize background scheduler for monitoring
 scheduler = BackgroundScheduler()
@@ -33,23 +40,41 @@ scheduler.start()
 
 @app.route("/api/alerts")
 def alerts():
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM alerts ORDER BY triggered_at DESC")
-    result = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return jsonify(result)
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM alerts ORDER BY created_at DESC LIMIT 50")
+        result = cursor.fetchall()
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error fetching alerts: {e}")
+        return jsonify([])
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-@app.route("/api/services/<int:service_id>/history")
+@app.route("/api/services/<service_id>/history")
 def service_history(service_id):
-    days = request.args.get("days", default=90, type=int)
-    return jsonify(get_service_history(service_id, days))
+    limit = request.args.get("limit", default=50, type=int)
+    try:
+        return jsonify(get_service_history(service_id, limit))
+    except Exception as e:
+        print(f"Error fetching service history: {e}")
+        return jsonify([])
 
 @app.route("/api/response-trend")
 def response_trend():
     limit = request.args.get("limit", default=10, type=int)
-    return jsonify(get_recent_response_trend(limit))
+    service_id = request.args.get("service_id", default=None, type=str)
+    try:
+        return jsonify(get_recent_response_trend(service_id=service_id, limit=limit))
+    except Exception as e:
+        print(f"Error fetching response trend: {e}")
+        return jsonify([])
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
